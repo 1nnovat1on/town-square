@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local Square</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Local Square</h1>
+    <p>Pick a nickname, city, and circle to enter the square. Nearby cities will appear as ready-made rooms.</p>
+
+    <form id="join-form" action="" onsubmit="go(event)">
+      <div class="row">
+        <div class="col">
+          <label>Nickname</label>
+          <input type="text" id="nick" placeholder="kronos" maxlength="20" required>
+        </div>
+        <div class="col">
+          <label>City</label>
+          <select id="city"></select>
+        </div>
+        <div class="col">
+          <label>Circle</label>
+          <select id="circle"></select>
+        </div>
+      </div>
+      <button type="submit">Enter Square</button>
+    </form>
+
+    <div class="tip">
+      <button id="nearbyBtn">Find Nearby Rooms</button>
+      <div id="nearby"></div>
+    </div>
+  </div>
+
+<script>
+async function loadCities(){
+  const res = await fetch('/api/cities');
+  const data = await res.json();
+  const citySel = document.getElementById('city');
+  citySel.innerHTML = data.cities.map(c => `<option value="${c}">${c}</option>`).join('');
+  await loadCircles(citySel.value);
+  citySel.addEventListener('change', async ()=>{
+    await loadCircles(citySel.value);
+  });
+}
+
+async function loadCircles(city){
+  const res = await fetch('/api/circles?city=' + encodeURIComponent(city));
+  const data = await res.json();
+  const circleSel = document.getElementById('circle');
+  circleSel.innerHTML = data.circles.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+function go(e){
+  e.preventDefault();
+  const nick = document.getElementById('nick').value.trim();
+  const city = document.getElementById('city').value.trim().toLowerCase().replaceAll(' ', '_');
+  const circle = document.getElementById('circle').value.trim().toLowerCase().replaceAll(' ', '_');
+  sessionStorage.setItem('nick', nick);
+  window.location.href = `/square/${city}/${circle}`;
+}
+
+async function findNearby(){
+  if (!navigator.geolocation){
+    alert('Geolocation not available.');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(async (pos)=>{
+    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    const res = await fetch(`/api/nearby?lat=${lat}&lon=${lon}`);
+    const data = await res.json();
+    const box = document.getElementById('nearby');
+    if (!data.nearby || !data.nearby.length){
+      box.innerHTML = '<p>No nearby cities found.</p>';
+      return;
+    }
+    const parts = await Promise.all(data.nearby.map(async n => {
+      const r = await fetch('/api/circles?city=' + encodeURIComponent(n.city));
+      const circles = (await r.json()).circles || [];
+      const buttons = circles.map(c => `<button class="pill" onclick="quickJoin('${n.city}','${c}')">${n.city} / ${c}</button>`).join(' ');
+      return `<div class="near-group"><h4>${n.city} ~${n.distance_km} km</h4>${buttons}</div>`;
+    }));
+    box.innerHTML = parts.join('');
+  }, (err)=>{ alert('Location denied'); });
+}
+
+function quickJoin(city, circle){
+  document.getElementById('city').value = city;
+  loadCircles(city).then(()=>{
+    document.getElementById('circle').value = circle;
+    document.getElementById('join-form').dispatchEvent(new Event('submit', {cancelable: true}));
+  });
+}
+
+document.getElementById('nearbyBtn').addEventListener('click', findNearby);
+loadCities();
+</script>
+</body>
+</html>
