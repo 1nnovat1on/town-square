@@ -44,10 +44,29 @@ CITY_CENTERS = {
 # available circles (e.g. age groups or other community groups) per city
 # these lists can be customised by editing this dictionary
 CITY_CIRCLES: Dict[str, List[str]] = {
-    "konigsbrunn": ["18-25", "25-35", "35-50", "50+"],
-    "munich": ["18-30", "30-45", "45-60", "60+"],
-    "augsburg": ["18-30", "30-45", "45-60"],
-    "new_york": ["18-25", "25-40", "40+"],
+    # Define age-based groups and a variety of interest-based circles.
+    # The age ranges follow roughly ten‑year increments, with a 59+ group.
+    # Interest circles allow people to connect around common hobbies.
+    "konigsbrunn": [
+        "18-28", "29-38", "39-48", "49-58", "59+",
+        "sports", "music", "gaming", "coding",
+        "travel", "foodies", "photography"
+    ],
+    "munich": [
+        "18-28", "29-38", "39-48", "49-58", "59+",
+        "sports", "music", "gaming", "coding",
+        "travel", "foodies", "photography"
+    ],
+    "augsburg": [
+        "18-28", "29-38", "39-48", "49-58", "59+",
+        "sports", "music", "gaming", "coding",
+        "travel", "foodies", "photography"
+    ],
+    "new_york": [
+        "18-28", "29-38", "39-48", "49-58", "59+",
+        "sports", "music", "gaming", "coding",
+        "travel", "foodies", "photography"
+    ],
 }
 
 # paths
@@ -135,6 +154,12 @@ def db_recent(city: str, circle: str, limit: int = 50) -> List[tuple]:
 
 # initialise database if needed
 db_init()
+
+# ---- User tracking for active users ----
+# Map each room key ("city::circle") to a dictionary of WebSocket connections
+# and their associated nicknames.  This allows us to broadcast the list of
+# active users to everyone in the room whenever someone joins or leaves.
+room_users: Dict[str, Dict[WebSocket, str]] = {}
 
 
 # ---- WebSocket connection management ----
@@ -246,16 +271,65 @@ async def ws_square(websocket: WebSocket, city: str, circle: str) -> None:
     try:
         while True:
             data = await websocket.receive_json()
+            # Handle a join event.  The client sends {"join": nickname} once upon connection
+            if "join" in data:
+                nick = sanitize(data.get("join", "anon")) or "anon"
+                key = manager.key(city, circle)
+                # register nickname for this websocket
+                room_users.setdefault(key, {})[websocket] = nick
+                # broadcast updated user list (type: users)
+                user_list = list(room_users[key].values())
+                await manager.broadcast(city, circle, {
+                    "type": "users",
+                    "users": user_list,
+                    "count": len(user_list),
+                })
+                continue
+
+            # Handle typing notifications
+            if data.get("type") == "typing":
+                nick = sanitize(data.get("nick", "anon")) or "anon"
+                # broadcast typing status to all clients
+                await manager.broadcast(city, circle, {
+                    "type": "typing",
+                    "nick": nick,
+                    "typing": bool(data.get("typing")),
+                })
+                continue
+
+            # Otherwise treat as a chat message
             nick = sanitize(data.get("nick", "anon")) or "anon"
             text = sanitize(data.get("text", ""))
             if not text:
                 continue
+            key = manager.key(city, circle)
+            # update stored nickname for this websocket (in case it changed)
+            room_users.setdefault(key, {})[websocket] = nick
             ts = int(time.time())
             db_save(city, circle, nick, text, ts)
             msg = {"nick": nick, "text": text, "ts": ts}
             await manager.broadcast(city, circle, msg)
+            # broadcast updated user list after message (ensures list stays fresh)
+            user_list = list(room_users[key].values())
+            await manager.broadcast(city, circle, {
+                "type": "users",
+                "users": user_list,
+                "count": len(user_list),
+            })
     except WebSocketDisconnect:
+        # remove connection from connection manager and user tracking
         manager.disconnect(city, circle, websocket)
+        key = manager.key(city, circle)
+        if key in room_users and websocket in room_users[key]:
+            room_users[key].pop(websocket, None)
+            # Only broadcast updated users list if there are other connections
+            if manager.rooms.get(key):
+                user_list = list(room_users[key].values())
+                await manager.broadcast(city, circle, {
+                    "type": "users",
+                    "users": user_list,
+                    "count": len(user_list),
+                })
 
 
 @app.get("/api/nearby")

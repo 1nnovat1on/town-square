@@ -45,6 +45,50 @@ button {
   background: #0c0f15;
 }
 
+/* highlight messages that mention the current user */
+.msg.mention {
+  background-color: #1a2636;
+}
+
+/* typing indicator styling */
+.typing-indicator {
+  font-size: 0.9rem;
+  color: #8fb7ff;
+  margin: 8px 0;
+}
+
+/* collapsible user list */
+.users-box {
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 16px;
+  background: #0c0f15;
+}
+.users-box summary {
+  font-weight: bold;
+  cursor: pointer;
+}
+.user-item {
+  padding: 4px 0;
+  border-bottom: 1px solid #151a22;
+}
+.user-item:last-child {
+  border-bottom: 0;
+}
+
+/* actions row (change circle + share) */
+.actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.actions button {
+  flex-shrink: 0;
+}
+
 .msg {
   padding: 6px 4px;
   border-bottom: 1px solid #151a22;

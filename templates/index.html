@@ -18,7 +18,11 @@
       <select id="city" onchange="cityChanged()" required></select>
 
       <label>Circle</label>
-      <select id="circle" required></select>
+      <select id="circle" onchange="circleChanged()" required></select>
+
+      <!-- Age input shown only for age-based circles -->
+      <label id="age-label" style="display: none;">Age</label>
+      <input type="number" id="age" min="1" max="120" style="display: none;">
 
       <button type="submit">Enter Square</button>
     </form>
@@ -67,6 +71,8 @@ async function loadCirclesFor(city) {
       opt.textContent = c;
       sel.appendChild(opt);
     });
+    // update age input visibility after repopulating circles
+    maybeToggleAgeInput();
   } catch (err) {
     console.error(err);
   }
@@ -82,7 +88,30 @@ function go(e) {
   const nick = document.getElementById('nick').value.trim() || 'anon';
   const city = document.getElementById('city').value.trim().toLowerCase().replace(/\s+/g, '_');
   const circle = document.getElementById('circle').value.trim().toLowerCase().replace(/\s+/g, '_');
+  // Verify age for age-based circles.  If the circle has a numeric range,
+  // the user must enter an age within that range.  If it ends with '+',
+  // the minimum age applies.
+  const ageField = document.getElementById('age');
+  const ageVal = ageField.value ? parseInt(ageField.value, 10) : NaN;
+  // pattern like "18-28" or "59+"
+  const rangeMatch = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(circle);
+  const plusMatch = /^\s*(\d+)\s*\+\s*$/.exec(circle);
+  if (rangeMatch) {
+    const min = parseInt(rangeMatch[1], 10);
+    const max = parseInt(rangeMatch[2], 10);
+    if (isNaN(ageVal) || ageVal < min || ageVal > max) {
+      alert(`This circle is for ages ${min}-${max}. Please enter a valid age.`);
+      return;
+    }
+  } else if (plusMatch) {
+    const min = parseInt(plusMatch[1], 10);
+    if (isNaN(ageVal) || ageVal < min) {
+      alert(`This circle is for ages ${min}+. Please enter a valid age.`);
+      return;
+    }
+  }
   sessionStorage.setItem('nick', nick);
+  sessionStorage.setItem('age', ageVal);
   if (!city || !circle) return;
   window.location.href = `/square/${city}/${circle}`;
 }
@@ -118,6 +147,27 @@ function pickCity(city) {
 
 // initialise on load
 loadCities();
+
+// show or hide age input based on selected circle
+function maybeToggleAgeInput() {
+  const circle = document.getElementById('circle').value;
+  const ageField = document.getElementById('age');
+  const ageLabel = document.getElementById('age-label');
+  // circle is age-based if it starts with a digit
+  const isAge = /^\s*\d/.test(circle || '');
+  if (isAge) {
+    ageField.style.display = '';
+    ageLabel.style.display = '';
+  } else {
+    ageField.style.display = 'none';
+    ageLabel.style.display = 'none';
+    ageField.value = '';
+  }
+}
+
+function circleChanged() {
+  maybeToggleAgeInput();
+}
 </script>
 </body>
 </html>

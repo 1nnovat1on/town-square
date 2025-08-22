@@ -14,11 +14,21 @@
         <div class="msg"><b>{{ nick }}</b>: {{ text }}</div>
       {%- endfor %}
     </div>
+    <div id="typingIndicator" class="typing-indicator" style="display:none;"></div>
     <form id="send" onsubmit="sendMsg(event)">
       <input type="text" id="text" placeholder="Say something..." autocomplete="off" maxlength="200" required>
       <button>Send</button>
     </form>
-    <a href="/">← change circle</a>
+    <div class="actions">
+      <a href="/">← change circle</a>
+      <button type="button" id="shareBtn" onclick="shareLink()">Copy link</button>
+    </div>
+
+    <!-- Collapsible user list -->
+    <details id="usersBox" class="users-box">
+      <summary id="usersSummary">Users (0)</summary>
+      <div id="usersList"></div>
+    </details>
   </div>
 
 <script>
@@ -32,13 +42,38 @@ const ws = new WebSocket(wsProtocol + location.host + `/ws/${city}/${circle}`);
 // handle incoming messages
 ws.onmessage = (ev) => {
   const m = JSON.parse(ev.data);
+  // special type: active users list
+  if (m.type === 'users') {
+    const summary = document.getElementById('usersSummary');
+    summary.textContent = `Users (${m.count})`;
+    const listDiv = document.getElementById('usersList');
+    listDiv.innerHTML = (m.users || []).map(u => `<div class="user-item">${escapeHtml(u)}</div>`).join('');
+    return;
+  }
+  // special type: typing indicator
+  if (m.type === 'typing') {
+    updateTypingIndicator(m.nick, m.typing);
+    return;
+  }
+  // default chat message
   const chat = document.getElementById('chat');
   const div = document.createElement('div');
-  div.className = 'msg';
+  let className = 'msg';
+  // highlight mentions to current user (case-insensitive)
+  const mentionRegex = new RegExp(`\\b@${nick}\\b`, 'i');
+  if (mentionRegex.test(m.text || '')) {
+    className += ' mention';
+  }
+  div.className = className;
   div.innerHTML = `<b>${escapeHtml(m.nick)}</b>: ${escapeHtml(m.text)}`;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 };
+
+// send join message once connected
+ws.addEventListener('open', () => {
+  ws.send(JSON.stringify({ join: nick }));
+});
 
 function sendMsg(e) {
   e.preventDefault();
@@ -51,6 +86,54 @@ function sendMsg(e) {
 
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[c]));
+}
+
+// ----- Typing indicator support -----
+let typingTimeout = null;
+const typingUsers = new Set();
+
+function updateTypingIndicator(user, isTyping) {
+  if (!user) return;
+  if (isTyping) {
+    typingUsers.add(user);
+  } else {
+    typingUsers.delete(user);
+  }
+  const indicator = document.getElementById('typingIndicator');
+  if (typingUsers.size > 0) {
+    indicator.style.display = '';
+    const names = Array.from(typingUsers).join(', ');
+    indicator.textContent = `${names} ${typingUsers.size === 1 ? 'is' : 'are'} typing...`;
+  } else {
+    indicator.style.display = 'none';
+    indicator.textContent = '';
+  }
+}
+
+// send typing events with debounce
+const textInput = document.getElementById('text');
+textInput.addEventListener('input', () => {
+  sendTyping(true);
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => sendTyping(false), 1500);
+});
+
+function sendTyping(isTyping) {
+  ws.send(JSON.stringify({ type: 'typing', nick: nick, typing: isTyping }));
+}
+
+// copy current square URL to clipboard
+function shareLink() {
+  const url = window.location.href;
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(url).then(() => {
+      alert('Link copied to clipboard');
+    }).catch(() => {
+      alert('Unable to copy link');
+    });
+  } else {
+    prompt('Copy this link:', url);
+  }
 }
 </script>
 </body>
