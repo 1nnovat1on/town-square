@@ -3,99 +3,120 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Local Square</title>
+  <title>Town Square</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="container">
-    <h1>Local Square</h1>
-    <p>Pick a nickname, city, and circle to enter the square. Nearby cities will appear as ready-made rooms.</p>
+    <h1>Town Square</h1>
+    <p>Pick a nickname, city and circle to enter the square.</p>
+    <form id="join-form" onsubmit="go(event)">
+      <label>Nickname</label>
+      <input type="text" id="nick" placeholder="kronos" maxlength="20" required>
 
-    <form id="join-form" action="" onsubmit="go(event)">
-      <div class="row">
-        <div class="col">
-          <label>Nickname</label>
-          <input type="text" id="nick" placeholder="kronos" maxlength="20" required>
-        </div>
-        <div class="col">
-          <label>City</label>
-          <select id="city"></select>
-        </div>
-        <div class="col">
-          <label>Circle</label>
-          <select id="circle"></select>
-        </div>
-      </div>
+      <label>City</label>
+      <select id="city" onchange="cityChanged()" required></select>
+
+      <label>Circle</label>
+      <select id="circle" required></select>
+
       <button type="submit">Enter Square</button>
     </form>
 
     <div class="tip">
-      <button id="nearbyBtn">Find Nearby Rooms</button>
+      <button type="button" onclick="suggest()">Suggest Nearby</button>
       <div id="nearby"></div>
     </div>
   </div>
 
 <script>
-async function loadCities(){
-  const res = await fetch('/api/cities');
-  const data = await res.json();
-  const citySel = document.getElementById('city');
-  citySel.innerHTML = data.cities.map(c => `<option value="${c}">${c}</option>`).join('');
-  await loadCircles(citySel.value);
-  citySel.addEventListener('change', async ()=>{
-    await loadCircles(citySel.value);
-  });
+// populate cities and default circles on load
+async function loadCities() {
+  try {
+    const res = await fetch('/api/cities');
+    const data = await res.json();
+    const select = document.getElementById('city');
+    select.innerHTML = '';
+    data.cities.forEach(city => {
+      const opt = document.createElement('option');
+      opt.value = city;
+      opt.textContent = city.replace(/_/g, ' ');
+      select.appendChild(opt);
+    });
+    // preselect default city from server context
+    const defaultCity = '{{ default_city }}'.toLowerCase();
+    if (defaultCity && data.cities.includes(defaultCity)) {
+      select.value = defaultCity;
+    }
+    await loadCirclesFor(select.value);
+  } catch (err) {
+    console.error(err);
+  }
 }
 
-async function loadCircles(city){
-  const res = await fetch('/api/circles?city=' + encodeURIComponent(city));
-  const data = await res.json();
-  const circleSel = document.getElementById('circle');
-  circleSel.innerHTML = data.circles.map(c => `<option value="${c}">${c}</option>`).join('');
+async function loadCirclesFor(city) {
+  if (!city) return;
+  try {
+    const res = await fetch(`/api/circles/${city}`);
+    const data = await res.json();
+    const sel = document.getElementById('circle');
+    sel.innerHTML = '';
+    (data.circles || []).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      sel.appendChild(opt);
+    });
+  } catch (err) {
+    console.error(err);
+  }
 }
 
-function go(e){
+function cityChanged() {
+  const city = document.getElementById('city').value;
+  loadCirclesFor(city);
+}
+
+function go(e) {
   e.preventDefault();
-  const nick = document.getElementById('nick').value.trim();
-  const city = document.getElementById('city').value.trim().toLowerCase().replaceAll(' ', '_');
-  const circle = document.getElementById('circle').value.trim().toLowerCase().replaceAll(' ', '_');
+  const nick = document.getElementById('nick').value.trim() || 'anon';
+  const city = document.getElementById('city').value.trim().toLowerCase().replace(/\s+/g, '_');
+  const circle = document.getElementById('circle').value.trim().toLowerCase().replace(/\s+/g, '_');
   sessionStorage.setItem('nick', nick);
+  if (!city || !circle) return;
   window.location.href = `/square/${city}/${circle}`;
 }
 
-async function findNearby(){
-  if (!navigator.geolocation){
+function suggest() {
+  if (!navigator.geolocation) {
     alert('Geolocation not available.');
     return;
   }
-  navigator.geolocation.getCurrentPosition(async (pos)=>{
-    const lat = pos.coords.latitude, lon = pos.coords.longitude;
-    const res = await fetch(`/api/nearby?lat=${lat}&lon=${lon}`);
-    const data = await res.json();
-    const box = document.getElementById('nearby');
-    if (!data.nearby || !data.nearby.length){
-      box.innerHTML = '<p>No nearby cities found.</p>';
-      return;
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+    try {
+      const res = await fetch(`/api/nearby?lat=${lat}&lon=${lon}`);
+      const data = await res.json();
+      const div = document.getElementById('nearby');
+      div.innerHTML = '<h4>Nearby:</h4>' + (data.nearby || []).map(item =>
+        `<button type="button" onclick="pickCity('${item.city}')">${item.city} (~${item.distance_km} km)</button>`
+      ).join(' ');
+    } catch (err) {
+      console.error(err);
     }
-    const parts = await Promise.all(data.nearby.map(async n => {
-      const r = await fetch('/api/circles?city=' + encodeURIComponent(n.city));
-      const circles = (await r.json()).circles || [];
-      const buttons = circles.map(c => `<button class="pill" onclick="quickJoin('${n.city}','${c}')">${n.city} / ${c}</button>`).join(' ');
-      return `<div class="near-group"><h4>${n.city} ~${n.distance_km} km</h4>${buttons}</div>`;
-    }));
-    box.innerHTML = parts.join('');
-  }, (err)=>{ alert('Location denied'); });
-}
-
-function quickJoin(city, circle){
-  document.getElementById('city').value = city;
-  loadCircles(city).then(()=>{
-    document.getElementById('circle').value = circle;
-    document.getElementById('join-form').dispatchEvent(new Event('submit', {cancelable: true}));
+  }, () => {
+    alert('Location denied.');
   });
 }
 
-document.getElementById('nearbyBtn').addEventListener('click', findNearby);
+function pickCity(city) {
+  const select = document.getElementById('city');
+  select.value = city;
+  cityChanged();
+}
+
+// initialise on load
 loadCities();
 </script>
 </body>

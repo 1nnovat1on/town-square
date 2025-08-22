@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ city }} / {{ circle }} · Local Square</title>
+  <title>{{ city }} / {{ circle }} · Town Square</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="container">
     <h2>{{ city }} / {{ circle }}</h2>
     <div id="chat">
-      {% for (nick, text, ts) in history %}
+      {%- for (nick, text, ts) in history %}
         <div class="msg"><b>{{ nick }}</b>: {{ text }}</div>
-      {% endfor %}
+      {%- endfor %}
     </div>
     <form id="send" onsubmit="sendMsg(event)">
       <input type="text" id="text" placeholder="Say something..." autocomplete="off" maxlength="200" required>
@@ -25,8 +25,11 @@
 const nick = sessionStorage.getItem('nick') || 'anon';
 const city = "{{ city }}";
 const circle = "{{ circle }}";
-const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + `/ws/${city}/${circle}`);
+// open a WebSocket connection; choose protocol based on page scheme
+const wsProtocol = (location.protocol === 'https:' ? 'wss://' : 'ws://');
+const ws = new WebSocket(wsProtocol + location.host + `/ws/${city}/${circle}`);
 
+// handle incoming messages
 ws.onmessage = (ev) => {
   const m = JSON.parse(ev.data);
   const chat = document.getElementById('chat');
@@ -37,17 +40,17 @@ ws.onmessage = (ev) => {
   chat.scrollTop = chat.scrollHeight;
 };
 
-function sendMsg(e){
+function sendMsg(e) {
   e.preventDefault();
   const input = document.getElementById('text');
   const text = input.value.trim();
-  if(!text) return;
-  ws.send(JSON.stringify({nick, text}));
-  input.value='';
+  if (!text) return;
+  ws.send(JSON.stringify({ nick, text }));
+  input.value = '';
 }
 
-function escapeHtml(s){
-  return s.replace(/[&<>"']/g, (c)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[c]));
 }
 </script>
 </body>

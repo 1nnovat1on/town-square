@@ -1,15 +1,63 @@
-body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;background:#0f1115;color:#e9eef5;margin:0;padding:0}
-.container{max-width:920px;margin:0 auto;padding:24px}
-h1,h2{margin-top:0}
-form{display:flex;flex-direction:column;gap:10px;margin:16px 0}
-.row{display:flex;gap:10px;flex-wrap:wrap}
-.col{flex:1;min-width:200px}
-input,select,button{padding:10px 12px;border-radius:8px;border:1px solid #333;background:#1a1f2b;color:#e9eef5}
-button{cursor:pointer}
-#chat{border:1px solid #333;border-radius:8px;padding:12px;height:50vh;overflow:auto;background:#0c0f15}
-.msg{padding:6px 4px;border-bottom:1px solid #151a22}
-.msg:last-child{border-bottom:0}
-a{color:#8fb7ff}
-.tip button{margin-right:8px}
-.pill{display:inline-block;margin:6px 6px 0 0;padding:8px 10px;border-radius:99px;border:1px solid #2b3350;background:#111826}
-.near-group h4{margin-bottom:6px;margin-top:16px}
+/* Basic dark theme for Town Square */
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial, sans-serif;
+  background: #0f1115;
+  color: #e9eef5;
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+h1, h2 {
+  margin-top: 0;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+input, select, button {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #1a1f2b;
+  color: #e9eef5;
+}
+
+button {
+  cursor: pointer;
+}
+
+#chat {
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 12px;
+  height: 50vh;
+  overflow: auto;
+  background: #0c0f15;
+}
+
+.msg {
+  padding: 6px 4px;
+  border-bottom: 1px solid #151a22;
+}
+
+.msg:last-child {
+  border-bottom: 0;
+}
+
+a {
+  color: #8fb7ff;
+}
+
+.tip button {
+  margin-right: 8px;
+}
