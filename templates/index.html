@@ -9,16 +9,16 @@
 <body>
   <div class="container">
     <h1>Town Square</h1>
-    <p>Pick a nickname, city and circle to enter the square.</p>
-    <form id="join-form" onsubmit="go(event)">
+    <p>Enter a nickname, choose a nearby room and circle to start chatting.</p>
+    <form id="join-form">
       <label>Nickname</label>
-      <input type="text" id="nick" placeholder="kronos" maxlength="20" required>
+      <input type="text" id="nick" placeholder="anon" maxlength="20" required>
 
-      <label>City</label>
-      <select id="city" onchange="cityChanged()" required></select>
+      <label>Room</label>
+      <select id="room" required></select>
 
       <label>Circle</label>
-      <select id="circle" onchange="circleChanged()" required></select>
+      <select id="circle" required></select>
 
       <!-- Age input shown only for age-based circles -->
       <label id="age-label" style="display: none;">Age</label>
@@ -27,135 +27,41 @@
       <button type="submit">Enter Square</button>
     </form>
 
-    <div class="tip">
-      <button type="button" onclick="suggest()">Suggest Nearby</button>
-      <div id="nearby"></div>
-    </div>
+    <button type="button" id="refreshRooms">Find Nearby Rooms</button>
   </div>
+  <footer class="footer">Abstergo Communication System</footer>
 
 <script>
-// populate cities and default circles on load
-async function loadCities() {
+// Load available circles (age + interest) from the server
+async function loadCircles() {
   try {
-    const res = await fetch('/api/cities');
-    const data = await res.json();
-    const select = document.getElementById('city');
-    select.innerHTML = '';
-    data.cities.forEach(city => {
-      const opt = document.createElement('option');
-      opt.value = city;
-      opt.textContent = city.replace(/_/g, ' ');
-      select.appendChild(opt);
-    });
-    // preselect default city from server context
-    const defaultCity = '{{ default_city }}'.toLowerCase();
-    if (defaultCity && data.cities.includes(defaultCity)) {
-      select.value = defaultCity;
-    }
-    await loadCirclesFor(select.value);
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-async function loadCirclesFor(city) {
-  if (!city) return;
-  try {
-    const res = await fetch(`/api/circles/${city}`);
+    const res = await fetch('/api/circles');
     const data = await res.json();
     const sel = document.getElementById('circle');
+    const all = [...(data.age || []), ...(data.interests || [])];
     sel.innerHTML = '';
-    (data.circles || []).forEach(c => {
+    all.forEach(c => {
       const opt = document.createElement('option');
       opt.value = c;
       opt.textContent = c;
       sel.appendChild(opt);
     });
-    // update age input visibility after repopulating circles
-    maybeToggleAgeInput();
+    toggleAge();
   } catch (err) {
     console.error(err);
   }
 }
 
-function cityChanged() {
-  const city = document.getElementById('city').value;
-  loadCirclesFor(city);
+// Determine whether a circle is age-based
+function isAgeCircle(c) {
+  return /^\s*\d/.test(c || '');
 }
 
-function go(e) {
-  e.preventDefault();
-  const nick = document.getElementById('nick').value.trim() || 'anon';
-  const city = document.getElementById('city').value.trim().toLowerCase().replace(/\s+/g, '_');
-  const circle = document.getElementById('circle').value.trim().toLowerCase().replace(/\s+/g, '_');
-  // Verify age for age-based circles.  If the circle has a numeric range,
-  // the user must enter an age within that range.  If it ends with '+',
-  // the minimum age applies.
-  const ageField = document.getElementById('age');
-  const ageVal = ageField.value ? parseInt(ageField.value, 10) : NaN;
-  // pattern like "18-28" or "59+"
-  const rangeMatch = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(circle);
-  const plusMatch = /^\s*(\d+)\s*\+\s*$/.exec(circle);
-  if (rangeMatch) {
-    const min = parseInt(rangeMatch[1], 10);
-    const max = parseInt(rangeMatch[2], 10);
-    if (isNaN(ageVal) || ageVal < min || ageVal > max) {
-      alert(`This circle is for ages ${min}-${max}. Please enter a valid age.`);
-      return;
-    }
-  } else if (plusMatch) {
-    const min = parseInt(plusMatch[1], 10);
-    if (isNaN(ageVal) || ageVal < min) {
-      alert(`This circle is for ages ${min}+. Please enter a valid age.`);
-      return;
-    }
-  }
-  sessionStorage.setItem('nick', nick);
-  sessionStorage.setItem('age', ageVal);
-  if (!city || !circle) return;
-  window.location.href = `/square/${city}/${circle}`;
-}
-
-function suggest() {
-  if (!navigator.geolocation) {
-    alert('Geolocation not available.');
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(async (pos) => {
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
-    try {
-      const res = await fetch(`/api/nearby?lat=${lat}&lon=${lon}`);
-      const data = await res.json();
-      const div = document.getElementById('nearby');
-      div.innerHTML = '<h4>Nearby:</h4>' + (data.nearby || []).map(item =>
-        `<button type="button" onclick="pickCity('${item.city}')">${item.city} (~${item.distance_km} km)</button>`
-      ).join(' ');
-    } catch (err) {
-      console.error(err);
-    }
-  }, () => {
-    alert('Location denied.');
-  });
-}
-
-function pickCity(city) {
-  const select = document.getElementById('city');
-  select.value = city;
-  cityChanged();
-}
-
-// initialise on load
-loadCities();
-
-// show or hide age input based on selected circle
-function maybeToggleAgeInput() {
+function toggleAge() {
   const circle = document.getElementById('circle').value;
   const ageField = document.getElementById('age');
   const ageLabel = document.getElementById('age-label');
-  // circle is age-based if it starts with a digit
-  const isAge = /^\s*\d/.test(circle || '');
-  if (isAge) {
+  if (isAgeCircle(circle)) {
     ageField.style.display = '';
     ageLabel.style.display = '';
   } else {
@@ -165,9 +71,80 @@ function maybeToggleAgeInput() {
   }
 }
 
-function circleChanged() {
-  maybeToggleAgeInput();
+document.getElementById('circle').addEventListener('change', toggleAge);
+
+// Load nearby room buckets from geolocation
+async function loadRoomsFromGeolocation() {
+  const sel = document.getElementById('room');
+  sel.innerHTML = '';
+  if (!navigator.geolocation) {
+    alert('Geolocation not available in your browser.');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+    try {
+      const res = await fetch(`/api/rooms?lat=${lat}&lon=${lon}`);
+      const data = await res.json();
+      const rooms = data.rooms || [];
+      sel.innerHTML = rooms.map(rm => {
+        const label = rm.is_center ? `${rm.id} (here)` : `${rm.id} (~${rm.distance_km} km)`;
+        return `<option value="${rm.id}">${label}</option>`;
+      }).join('');
+    } catch (err) {
+      console.error(err);
+      alert('Could not fetch nearby rooms.');
+    }
+  }, err => {
+    alert('Unable to obtain location: ' + err.message);
+  });
 }
+
+document.getElementById('refreshRooms').addEventListener('click', () => {
+  loadRoomsFromGeolocation();
+});
+
+// Handle form submission (join room)
+document.getElementById('join-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const nick = document.getElementById('nick').value.trim() || 'anon';
+  const room = document.getElementById('room').value;
+  const circle = document.getElementById('circle').value;
+  if (!room || !circle) return;
+  // Age gating for age circles
+  if (isAgeCircle(circle)) {
+    const ageVal = parseInt(document.getElementById('age').value || '0', 10);
+    if (isNaN(ageVal) || ageVal <= 0) {
+      alert('Please enter your age for this circle.');
+      return;
+    }
+    const plusMatch = /^\s*(\d+)\s*\+\s*$/.exec(circle);
+    const rangeMatch = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(circle);
+    if (rangeMatch) {
+      const min = parseInt(rangeMatch[1], 10);
+      const max = parseInt(rangeMatch[2], 10);
+      if (ageVal < min || ageVal > max) {
+        alert(`This circle is for ages ${min}-${max}. Please enter a valid age.`);
+        return;
+      }
+    } else if (plusMatch) {
+      const min = parseInt(plusMatch[1], 10);
+      if (ageVal < min) {
+        alert(`This circle is for ages ${min}+.`);
+        return;
+      }
+    }
+    sessionStorage.setItem('age', ageVal);
+  }
+  sessionStorage.setItem('nick', nick);
+  window.location.href = `/square/${encodeURIComponent(room)}/${encodeURIComponent(circle)}`;
+});
+
+// Initial load
+loadCircles();
+// Try to load rooms immediately
+loadRoomsFromGeolocation();
 </script>
 </body>
 </html>

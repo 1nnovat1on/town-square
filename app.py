@@ -1,22 +1,28 @@
 """
 Town Square application.
 
-This FastAPI app implements a privacy‑first local chat where users join
-city‑/circle‑based rooms.  It provides endpoints for real‑time chat via
-WebSockets, as well as REST endpoints to enumerate available cities,
-circles and nearby suggestions.  Messages are stored in memory by default
-or, optionally, in a short‑term SQLite database controlled by the
-``RETENTION_HOURS`` environment variable.
+This FastAPI app implements a privacy‑first local chat.  Unlike
+traditional chat services that require you to join predefined cities or
+servers, Town Square derives every room from the participant’s
+geolocation.  When you load the site the browser obtains your
+coordinates (with your permission) and the server generates a handful
+of nearby *room buckets*.  You then choose an **age** or **interest**
+circle and join the conversation.
+
+Messages are stored in memory by default.  You can optionally
+configure a retention period by setting the ``RETENTION_HOURS``
+environment variable; messages older than that will be pruned from the
+SQLite database.
 """
 
 import os
 import time
 import math
 import sqlite3
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,52 +33,31 @@ from pathlib import Path
 
 # number of hours to retain messages; 0 = keep only in memory
 RETENTION_HOURS = int(os.getenv("RETENTION_HOURS", "0"))
-# default city used when no geolocation is available on the client
-DEFAULT_CITY = os.getenv("DEFAULT_CITY", "konigsbrunn").lower()
 # allowed CORS origins; multiple origins may be comma separated
 _cors = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
 ORIGINS = [o.strip() for o in _cors if o.strip()]
 
-# known city centres and optional labels; used for geolocation suggestions
-CITY_CENTERS = {
-    "konigsbrunn": (48.268, 10.889),
-    "munich": (48.137, 11.575),
-    "augsburg": (48.371, 10.898),
-    "new_york": (40.7128, -74.0060),
-}
-
-# available circles (e.g. age groups or other community groups) per city
-# these lists can be customised by editing this dictionary
-CITY_CIRCLES: Dict[str, List[str]] = {
-    # Define age-based groups and a variety of interest-based circles.
-    # The age ranges follow roughly ten‑year increments, with a 59+ group.
-    # Interest circles allow people to connect around common hobbies.
-    "konigsbrunn": [
-        "18-28", "29-38", "39-48", "49-58", "59+",
-        "sports", "music", "gaming", "coding",
-        "travel", "foodies", "photography"
-    ],
-    "munich": [
-        "18-28", "29-38", "39-48", "49-58", "59+",
-        "sports", "music", "gaming", "coding",
-        "travel", "foodies", "photography"
-    ],
-    "augsburg": [
-        "18-28", "29-38", "39-48", "49-58", "59+",
-        "sports", "music", "gaming", "coding",
-        "travel", "foodies", "photography"
-    ],
-    "new_york": [
-        "18-28", "29-38", "39-48", "49-58", "59+",
-        "sports", "music", "gaming", "coding",
-        "travel", "foodies", "photography"
-    ],
-}
+# generic circles: age ranges and interest groups
+AGE_CIRCLES: List[str] = [
+    "18-28",
+    "29-38",
+    "39-48",
+    "49-58",
+    "59+",
+]
+INTEREST_CIRCLES: List[str] = [
+    "sports",
+    "music",
+    "gaming",
+    "coding",
+    "travel",
+    "foodies",
+    "photography",
+]
 
 # paths
 BASE_DIR = Path(__file__).parent
 DB_PATH = BASE_DIR / "square.db"
-
 
 # ---- App setup ----
 
@@ -104,7 +89,7 @@ def db_init() -> None:
             """
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                city TEXT NOT NULL,
+                room TEXT NOT NULL,
                 circle TEXT NOT NULL,
                 nick TEXT NOT NULL,
                 text TEXT NOT NULL,
@@ -113,25 +98,25 @@ def db_init() -> None:
             """
         )
         cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_city_circle_ts ON messages(city, circle, ts)"
+            "CREATE INDEX IF NOT EXISTS idx_room_circle_ts ON messages(room, circle, ts)"
         )
         con.commit()
 
 
-def db_save(city: str, circle: str, nick: str, text: str, ts: int) -> None:
+def db_save(room: str, circle: str, nick: str, text: str, ts: int) -> None:
     """Persist a message to SQLite when retention is enabled."""
     if RETENTION_HOURS <= 0:
         return
     with sqlite3.connect(DB_PATH) as con:
         con.execute(
-            "INSERT INTO messages(city, circle, nick, text, ts) VALUES(?,?,?,?,?)",
-            (city, circle, nick, text, ts),
+            "INSERT INTO messages(room, circle, nick, text, ts) VALUES(?,?,?,?,?)",
+            (room, circle, nick, text, ts),
         )
         con.commit()
 
 
-def db_recent(city: str, circle: str, limit: int = 50) -> List[tuple]:
-    """Fetch recent messages for a city/circle pair from SQLite."""
+def db_recent(room: str, circle: str, limit: int = 50) -> List[tuple]:
+    """Fetch recent messages for a room/circle pair from SQLite."""
     if RETENTION_HOURS <= 0:
         return []
     cutoff = int(time.time()) - RETENTION_HOURS * 3600
@@ -142,10 +127,10 @@ def db_recent(city: str, circle: str, limit: int = 50) -> List[tuple]:
         cur.execute(
             """
             SELECT nick, text, ts FROM messages
-            WHERE city = ? AND circle = ? AND ts >= ?
+            WHERE room = ? AND circle = ? AND ts >= ?
             ORDER BY ts DESC LIMIT ?
             """,
-            (city, circle, cutoff, limit),
+            (room, circle, cutoff, limit),
         )
         rows = cur.fetchall()
     # return in ascending order of timestamp (oldest first) for display
@@ -156,7 +141,7 @@ def db_recent(city: str, circle: str, limit: int = 50) -> List[tuple]:
 db_init()
 
 # ---- User tracking for active users ----
-# Map each room key ("city::circle") to a dictionary of WebSocket connections
+# Map each room key ("room::circle") to a dictionary of WebSocket connections
 # and their associated nicknames.  This allows us to broadcast the list of
 # active users to everyone in the room whenever someone joins or leaves.
 room_users: Dict[str, Dict[WebSocket, str]] = {}
@@ -168,27 +153,27 @@ class ConnectionManager:
     """Track active WebSocket connections for each room."""
 
     def __init__(self) -> None:
-        # key is "city::circle"; value is list of WebSocket connections
+        # key is "room::circle"; value is list of WebSocket connections
         self.rooms: Dict[str, List[WebSocket]] = {}
 
-    def key(self, city: str, circle: str) -> str:
-        return f"{city.lower()}::{circle.lower()}"
+    def key(self, room: str, circle: str) -> str:
+        return f"{room.lower()}::{circle.lower()}"
 
-    async def connect(self, city: str, circle: str, websocket: WebSocket) -> None:
+    async def connect(self, room: str, circle: str, websocket: WebSocket) -> None:
         await websocket.accept()
-        k = self.key(city, circle)
+        k = self.key(room, circle)
         self.rooms.setdefault(k, []).append(websocket)
 
-    def disconnect(self, city: str, circle: str, websocket: WebSocket) -> None:
-        k = self.key(city, circle)
+    def disconnect(self, room: str, circle: str, websocket: WebSocket) -> None:
+        k = self.key(room, circle)
         if k in self.rooms and websocket in self.rooms[k]:
             self.rooms[k].remove(websocket)
             if not self.rooms[k]:
                 self.rooms.pop(k, None)
 
-    async def broadcast(self, city: str, circle: str, message: dict) -> None:
+    async def broadcast(self, room: str, circle: str, message: dict) -> None:
         """Send a message to all clients in a room and remove dead connections."""
-        k = self.key(city, circle)
+        k = self.key(room, circle)
         dead: List[WebSocket] = []
         for ws in self.rooms.get(k, []):
             try:
@@ -196,7 +181,7 @@ class ConnectionManager:
             except Exception:
                 dead.append(ws)
         for ws in dead:
-            self.disconnect(city, circle, ws)
+            self.disconnect(room, circle, ws)
 
 
 manager = ConnectionManager()
@@ -231,6 +216,35 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * c
 
 
+def room_bucket(lat: float, lon: float, precision: int = 3) -> str:
+    """Bucketize latitude and longitude to create a deterministic room ID.
+
+    The ``precision`` determines rounding precision; default 3 means ~100–150 m
+    resolution.  Adjust this value to control how large a geographic area
+    each room covers.
+    """
+    return f"{round(lat, precision)}_{round(lon, precision)}"
+
+
+def neighbor_buckets(lat: float, lon: float, step: float = 0.001) -> List[tuple[str, float, float]]:
+    """Generate a 3×3 neighbourhood of buckets centred on the given lat/lon.
+
+    Returns a list of tuples ``(room_id, bucket_lat, bucket_lon)`` for the
+    centre and its eight immediate neighbours.  The ``step`` argument
+    controls how far apart each neighbouring bucket is (default 0.001
+    degrees ≈ 100 m).  You can modify this value if you choose a
+    different bucket precision.
+    """
+    rooms: List[tuple[str, float, float]] = []
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            rlat = lat + di * step
+            rlon = lon + dj * step
+            rid = room_bucket(rlat, rlon)
+            rooms.append((rid, rlat, rlon))
+    return rooms
+
+
 # ---- Routes ----
 
 @app.get("/health")
@@ -241,45 +255,46 @@ def health() -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
-    """Landing page: choose nickname, city and circle."""
+    """Landing page: choose nickname, room (derived from location) and circle."""
     return templates.TemplateResponse(
-        "index.html", {"request": request, "default_city": DEFAULT_CITY}
+        "index.html",
+        {"request": request},
     )
 
 
-@app.get("/square/{city}/{circle}", response_class=HTMLResponse)
-def square_page(request: Request, city: str, circle: str) -> HTMLResponse:
-    city = sanitize(city.lower().replace(" ", "_"))
+@app.get("/square/{room}/{circle}", response_class=HTMLResponse)
+def square_page(request: Request, room: str, circle: str) -> HTMLResponse:
+    room = sanitize(room.lower().replace(" ", "_"))
     circle = sanitize(circle.lower().replace(" ", "_"))
-    history = db_recent(city, circle, limit=50)
+    history = db_recent(room, circle, limit=50)
     return templates.TemplateResponse(
         "square.html",
         {
             "request": request,
-            "city": city,
+            "room": room,
             "circle": circle,
             "history": history,
         },
     )
 
 
-@app.websocket("/ws/{city}/{circle}")
-async def ws_square(websocket: WebSocket, city: str, circle: str) -> None:
-    city = sanitize(city)
+@app.websocket("/ws/{room}/{circle}")
+async def ws_square(websocket: WebSocket, room: str, circle: str) -> None:
+    room = sanitize(room)
     circle = sanitize(circle)
-    await manager.connect(city, circle, websocket)
+    await manager.connect(room, circle, websocket)
     try:
         while True:
             data = await websocket.receive_json()
             # Handle a join event.  The client sends {"join": nickname} once upon connection
             if "join" in data:
                 nick = sanitize(data.get("join", "anon")) or "anon"
-                key = manager.key(city, circle)
+                key = manager.key(room, circle)
                 # register nickname for this websocket
                 room_users.setdefault(key, {})[websocket] = nick
                 # broadcast updated user list (type: users)
                 user_list = list(room_users[key].values())
-                await manager.broadcast(city, circle, {
+                await manager.broadcast(room, circle, {
                     "type": "users",
                     "users": user_list,
                     "count": len(user_list),
@@ -290,7 +305,7 @@ async def ws_square(websocket: WebSocket, city: str, circle: str) -> None:
             if data.get("type") == "typing":
                 nick = sanitize(data.get("nick", "anon")) or "anon"
                 # broadcast typing status to all clients
-                await manager.broadcast(city, circle, {
+                await manager.broadcast(room, circle, {
                     "type": "typing",
                     "nick": nick,
                     "typing": bool(data.get("typing")),
@@ -302,58 +317,64 @@ async def ws_square(websocket: WebSocket, city: str, circle: str) -> None:
             text = sanitize(data.get("text", ""))
             if not text:
                 continue
-            key = manager.key(city, circle)
+            key = manager.key(room, circle)
             # update stored nickname for this websocket (in case it changed)
             room_users.setdefault(key, {})[websocket] = nick
             ts = int(time.time())
-            db_save(city, circle, nick, text, ts)
+            db_save(room, circle, nick, text, ts)
             msg = {"nick": nick, "text": text, "ts": ts}
-            await manager.broadcast(city, circle, msg)
+            await manager.broadcast(room, circle, msg)
             # broadcast updated user list after message (ensures list stays fresh)
             user_list = list(room_users[key].values())
-            await manager.broadcast(city, circle, {
+            await manager.broadcast(room, circle, {
                 "type": "users",
                 "users": user_list,
                 "count": len(user_list),
             })
     except WebSocketDisconnect:
         # remove connection from connection manager and user tracking
-        manager.disconnect(city, circle, websocket)
-        key = manager.key(city, circle)
+        manager.disconnect(room, circle, websocket)
+        key = manager.key(room, circle)
         if key in room_users and websocket in room_users[key]:
             room_users[key].pop(websocket, None)
             # Only broadcast updated users list if there are other connections
             if manager.rooms.get(key):
                 user_list = list(room_users[key].values())
-                await manager.broadcast(city, circle, {
+                await manager.broadcast(room, circle, {
                     "type": "users",
                     "users": user_list,
                     "count": len(user_list),
                 })
 
 
-@app.get("/api/nearby")
-def nearby(lat: float, lon: float) -> dict:
-    """Suggest up to three closest known cities to the given lat/lon."""
-    best = sorted(
-        (
-            (name, haversine(lat, lon, coords[0], coords[1]))
-            for name, coords in CITY_CENTERS.items()
-        ),
-        key=lambda x: x[1],
-    )[:3]
-    return {"nearby": [{"city": name, "distance_km": round(dist, 1)} for name, dist in best]}
+@app.get("/api/rooms")
+def api_rooms(lat: float, lon: float) -> dict:
+    """Return a list of nearby room buckets and distances from the supplied coordinate.
+
+    The centre bucket (the one containing the provided coordinate) is
+    marked with ``is_center = True``.  Distances are reported in
+    kilometres and rounded to two decimal places.
+    """
+    # compute centre id
+    centre_id = room_bucket(lat, lon)
+    rooms = []
+    for rid, rlat, rlon in neighbor_buckets(lat, lon):
+        rooms.append({
+            "id": rid,
+            "lat": rlat,
+            "lon": rlon,
+            "distance_km": round(haversine(lat, lon, rlat, rlon), 2),
+            "is_center": rid == centre_id,
+        })
+    rooms.sort(key=lambda x: (not x["is_center"], x["distance_km"]))
+    return {"rooms": rooms}
 
 
-@app.get("/api/cities")
-def list_cities() -> dict:
-    """Return the list of available cities."""
-    return {"cities": list(CITY_CENTERS.keys())}
+@app.get("/api/circles")
+def api_circles() -> dict:
+    """Return the available age and interest circles.
 
-
-@app.get("/api/circles/{city}")
-def list_circles(city: str) -> dict:
-    """Return the list of circles for a given city (empty if none)."""
-    key = sanitize(city.lower())
-    circles = CITY_CIRCLES.get(key, [])
-    return {"circles": circles}
+    Age circles are numeric ranges (e.g. ``18-28``) or plus ranges
+    (``59+``).  Interest circles are words (e.g. ``music``, ``coding``).
+    """
+    return {"age": AGE_CIRCLES, "interests": INTEREST_CIRCLES}

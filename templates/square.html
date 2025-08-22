@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ city }} / {{ circle }} · Town Square</title>
+  <title>{{ room }} / {{ circle }} · Town Square</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="container">
-    <h2>{{ city }} / {{ circle }}</h2>
+    <h2>{{ room }} / {{ circle }}</h2>
     <div id="chat">
       {%- for (nick, text, ts) in history %}
         <div class="msg"><b>{{ nick }}</b>: {{ text }}</div>
@@ -30,14 +30,15 @@
       <div id="usersList"></div>
     </details>
   </div>
+  <footer class="footer">Abstergo Communication System</footer>
 
 <script>
 const nick = sessionStorage.getItem('nick') || 'anon';
-const city = "{{ city }}";
+const room = "{{ room }}";
 const circle = "{{ circle }}";
 // open a WebSocket connection; choose protocol based on page scheme
 const wsProtocol = (location.protocol === 'https:' ? 'wss://' : 'ws://');
-const ws = new WebSocket(wsProtocol + location.host + `/ws/${city}/${circle}`);
+const ws = new WebSocket(wsProtocol + location.host + `/ws/${room}/${circle}`);
 
 // handle incoming messages
 ws.onmessage = (ev) => {
@@ -82,10 +83,11 @@ function sendMsg(e) {
   if (!text) return;
   ws.send(JSON.stringify({ nick, text }));
   input.value = '';
+  sendTyping(false);
 }
 
 function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[c]));
+  return s.replace(/[&<>\"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[c]));
 }
 
 // ----- Typing indicator support -----

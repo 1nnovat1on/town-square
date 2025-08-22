@@ -1,20 +1,9 @@
-# Byte‑compiled / optimized / DLL files
 __pycache__/
-*.py[cod]
-*$py.class
-
-# Virtual environments
+*.pyc
+.env
 .venv/
 venv/
-ENV/
-env/
-*.env
-
-# Distribution / packaging
-build/
 dist/
+build/
 *.db
-
-# OS files
-.DS_Store
-Thumbs.db
+square.db

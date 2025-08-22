@@ -1,75 +1,61 @@
-# Town Square
+"""
+Town Square
+===========
 
-A lightweight, privacy‑first **town square** app.  Join a city circle (e.g. `munich/28‑35`) and chat in real‑time.
-No ads, no feeds — just people nearby.  The goal is to restore the simple village plaza in digital form.
+**Town Square** is a privacy‑first local communication app. Instead of
+predefined cities or channels, all chat rooms are derived from the
+participant’s location.  When you open the app it requests your
+geolocation (never sent to third‑party services) and shows a handful of
+nearby room identifiers.  You can then choose an **age** or **interest**
+circle and join the conversation.
 
-## ✨ Features
+### Features
 
-- 🔁 **Real‑time chat** via WebSockets — each square is a separate room based on city and circle (for example, age group).
-- 🗺️ **Selectable rooms** — choose your city and circle from dropdowns; misspellings are a thing of the past.
-- 📍 **Nearby suggestions** — if you grant geolocation, the app suggests the closest cities for you to join.
-- 🧰 **Simple storage** — messages are stored in memory by default; enable short‑lived SQLite persistence via `RETENTION_HOURS`.
-- 🔐 **No accounts** — users pick a nickname that can be changed at any time.  We never store IP addresses or personal identifiers.
+* 📍 **Location‑based rooms.**  No hard‑coded cities; rooms are generated
+  from latitude/longitude buckets.  Users in the same neighbourhood see
+  the same set of rooms.
+* 🧓 **Age and interest circles.**  Pick a circle such as *18‑28*,
+  *29‑38*, *sports*, *music*, etc.  Age circles prompt for your age and
+  verify you fit the range on the client side.
+* 👤 **Active users list.**  Each room shows a collapsible list of
+  connected users and a typing indicator so there are no lurking
+  strangers.
+* 💬 **Real‑time chat.**  Built on WebSockets using FastAPI.  Messages
+  are stored in memory by default or persisted for a few hours if
+  desired via the `RETENTION_HOURS` environment variable.
+* 🔐 **Privacy first.**  No accounts, no IP logging.  Rooms are based on
+  location buckets only.  Geolocation is processed client‑side and
+  shared only with your own server to compute nearby buckets.
+* 🛠️ **Easy deployment.**  The server is a single Python file.  Deploy on
+  a Raspberry Pi, set up a systemd unit and serve it over a private
+  network like Tailscale or your own tunnel.
 
-## Quickstart
+### Quickstart
 
 ```bash
-# create and activate a virtual environment
+git clone <your fork URL>
+cd town-square-location
 python -m venv .venv
-# on Windows (PowerShell)
-. .venv\Scripts\Activate.ps1
-# on macOS/Linux
-# source .venv/bin/activate
-
-# install dependencies
+source .venv/bin/activate
 pip install -r requirements.txt
 
-# start the server on port 8080
+# start the server
 uvicorn app:app --reload --port 8080
 
-# open http://localhost:8080 in your browser
+# visit http://localhost:8080 in your browser
 ```
 
-## Environment options
+For Raspberry Pi deployments, see the instructions in the conversation.
 
-You can customise behaviour using environment variables (create a `.env` file or export them):
+### Environment variables
 
-```
-# how long to retain messages in hours (0 = in‑memory only)
-RETENTION_HOURS=12
+* `RETENTION_HOURS` – number of hours to keep messages in SQLite.  If
+  unset or `0` (default) messages are stored only in memory.
+* `CORS_ORIGINS` – optional comma‑separated list of origins allowed to
+  access the API (useful if you host the frontend elsewhere).
 
-# default city when no geolocation is available
-DEFAULT_CITY=konigsbrunn
+### License
 
-# comma‑separated list of allowed origins for CORS (for example, if hosting the frontend separately)
-CORS_ORIGINS=http://localhost:8080
-```
+MIT
 
-## API/URLs
-
-Endpoint                    | Description
----------------------------|---------------------------------------------------------------
-`GET /`                    | join page (pick nickname, city and circle)
-`GET /square/{city}/{circle}` | chat UI for that square
-`WS /ws/{city}/{circle}`   | WebSocket endpoint for messages
-`GET /api/cities`          | returns the list of available cities
-`GET /api/circles/{city}`  | returns the list of circles for a city
-`GET /api/nearby?lat=..&lon=..` | suggests nearby cities (simple demo)
-`GET /health`              | health‑check (returns JSON)
-
-## Notes on privacy
-
-- **No accounts:** users choose a nickname; no IP addresses are stored.
-- **Ephemeral by default:** messages live in memory only unless `RETENTION_HOURS` is set.
-- **Local suggestions:** geolocation is processed client‑side and never stored on the server.
-
-## Roadmap
-
-- Invite links and per‑circle rules (moderation by local stewards).
-- Show active user counts per square.
-- Federated squares so that multiple servers can discover each other.
-- Presence pings to indicate who is nearby without revealing location.
-
----
-
-Made by Abstergo LLC.
+"""

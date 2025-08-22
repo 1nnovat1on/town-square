@@ -1,4 +1,4 @@
-/* Basic dark theme for Town Square */
+/* Base dark theme for Town Square */
 body {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial, sans-serif;
   background: #0f1115;
@@ -7,20 +7,24 @@ body {
   padding: 0;
 }
 
+/* Center content on large screens but allow full width on mobile */
 .container {
-  max-width: 720px;
+  max-width: 640px;
+  width: 100%;
   margin: 0 auto;
-  padding: 24px;
+  padding: 16px;
+  box-sizing: border-box;
 }
 
 h1, h2 {
   margin-top: 0;
+  font-size: 1.6rem;
 }
 
 form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   margin: 16px 0;
 }
 
@@ -30,6 +34,7 @@ input, select, button {
   border: 1px solid #333;
   background: #1a1f2b;
   color: #e9eef5;
+  box-sizing: border-box;
 }
 
 button {
@@ -41,8 +46,18 @@ button {
   border-radius: 8px;
   padding: 12px;
   height: 50vh;
-  overflow: auto;
+  overflow-y: auto;
   background: #0c0f15;
+  margin-bottom: 8px;
+}
+
+.msg {
+  padding: 6px 4px;
+  border-bottom: 1px solid #151a22;
+}
+
+.msg:last-child {
+  border-bottom: 0;
 }
 
 /* highlight messages that mention the current user */
@@ -54,7 +69,7 @@ button {
 .typing-indicator {
   font-size: 0.9rem;
   color: #8fb7ff;
-  margin: 8px 0;
+  margin: 4px 0 8px 0;
 }
 
 /* collapsible user list */
@@ -89,19 +104,19 @@ button {
   flex-shrink: 0;
 }
 
-.msg {
-  padding: 6px 4px;
-  border-bottom: 1px solid #151a22;
-}
-
-.msg:last-child {
-  border-bottom: 0;
-}
-
 a {
   color: #8fb7ff;
+  text-decoration: none;
 }
 
 .tip button {
   margin-right: 8px;
+}
+
+/* footer tagline */
+.footer {
+  margin-top: 24px;
+  font-size: 0.8rem;
+  text-align: center;
+  color: #8fb7ff;
 }
