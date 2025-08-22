@@ -1,6 +1,3 @@
-Ah good catch — the README as written only has the **local dev setup**, not the **Raspberry Pi deployment** instructions. Let me extend it for you. Here’s a version with **Pi setup included** at the bottom:
-
-````markdown
 Town Square
 ===========
 
